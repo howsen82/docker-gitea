@@ -1,0 +1,102 @@
+# Gitea with Let's Encrypt Using Docker Compose
+
+# Change variables in the `.env` to meet your requirements.
+# Note that the `.env` file should be in the same directory as `docker-compose.yml`.
+
+# Create networks for your services before deploying the configuration using the commands
+# docker network create gitea-network
+
+# Deploy Gitea using Docker Compose
+# docker-compose -p gitea up -d
+
+version: '3.9'
+
+services:
+  gitea:
+    container_name: gitea
+    image: ${GITEA_IMAGE_TAG}
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA_DATABASE_HOST=postgres
+      - GITEA_DATABASE_NAME=${GITEA_DB_NAME}
+      - GITEA_DATABASE_USERNAME=${GITEA_DB_USER}
+      - GITEA_DATABASE_PASSWORD=${GITEA_DB_PASSWORD}
+      - GITEA_ADMIN_USER=${GITEA_ADMIN_USERNAME}
+      - GITEA_ADMIN_PASSWORD=${GITEA_ADMIN_PASSWORD}
+      - GITEA_ADMIN_EMAIL=${GITEA_ADMIN_EMAIL}
+      - GITEA_RUN_MODE=prod
+      - GITEA_DOMAIN=${GITEA_HOSTNAME}
+      - GITEA_SSH_DOMAIN=${GITEA_HOSTNAME}
+      - GITEA_ROOT_URL=${GITEA_URL}
+      - GITEA_HTTP_PORT=3000
+      - GITEA_SSH_PORT=${GITEA_SHELL_SSH_PORT}
+      - GITEA_SSH_LISTEN_PORT=22
+    volumes:
+      - gitea-data:/${DATA_PATH}
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - gitea-network
+    ports:
+      - 3000:3000
+      - 222:22
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+  
+  postgres:
+    container_name: postgres
+    image: ${GITEA_POSTGRES_IMAGE_TAG}
+    environment:
+      - POSTGRES_DB=${GITEA_DB_NAME}
+      - POSTGRES_USER=${GITEA_DB_USER}
+      - POSTGRES_PASSWORD=${GITEA_DB_PASSWORD}
+    networks:
+      - gitea-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-d", "${GITEA_DB_NAME}", "-U", "${GITEA_DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+  
+  backups:
+    image: ${GITEA_POSTGRES_IMAGE_TAG}
+    volumes:
+      - gitea-postgres-backup:/var/lib/postgresql/data
+      - gitea-data:${DATA_PATH}
+      - gitea-data-backups:${DATA_BACKUPS_PATH}
+      - gitea-database-backups:${POSTGRES_BACKUPS_PATH}
+    environment:
+      GITEA_DB_NAME: ${GITEA_DB_NAME}
+      GITEA_DB_USER: ${GITEA_DB_USER}
+      PGPASSWORD: ${GITEA_DB_PASSWORD}
+      BACKUP_INIT_SLEEP: ${BACKUP_INIT_SLEEP}
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL}
+      POSTGRES_BACKUP_PRUNE_DAYS: ${POSTGRES_BACKUP_PRUNE_DAYS}
+      DATA_BACKUP_PRUNE_DAYS: ${DATA_BACKUP_PRUNE_DAYS}
+      POSTGRES_BACKUPS_PATH: ${POSTGRES_BACKUPS_PATH}
+      DATA_BACKUPS_PATH: ${DATA_BACKUPS_PATH}
+      DATA_PATH: ${DATA_PATH}
+      POSTGRES_BACKUP_NAME: ${POSTGRES_BACKUP_NAME}
+      DATA_BACKUP_NAME: ${DATA_BACKUP_NAME}
+    networks:
+      - gitea-network
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  gitea-data:
+  gitea-postgres:
+  gitea-postgres-backup:
+  gitea-data-backups:
+  gitea-database-backups:
+
+networks:
+  gitea-network:
+    external: true
